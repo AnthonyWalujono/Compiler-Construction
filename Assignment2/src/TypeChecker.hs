@@ -129,7 +129,13 @@ checkStm env (SReturn e) ty = do
     checkExp env e ty
     return env
 
--- checkStm env (SInit ty' i e) ty = do
+checkStm env (SInit ty' i e) ty = do
+    env <- insertVar env 1 ty'
+    ty1 <- inferTypeExp env' e 
+    if ty1 == ty' then
+        return env'
+    else 
+        fail $ typeMismatchError e ty1 ty'
     -- similar to SDecls, but not need for foldM
 
 -- checkStm env SReturnVoid Type_void =
@@ -152,6 +158,9 @@ Once you have all cases you can delete the next line which is only needed to cat
 -}
 checkStm _ s _ = fail $ "Missing case in checkStm encountered:\n" ++ printTree s
 
+isNumType :: Type -> Bool
+isNumType ty =  ty == Type_int || ty == Type_double
+
 
 {- 
 In ty <- inferTypExp env e we have
@@ -162,9 +171,9 @@ In ty <- inferTypExp env e we have
 -}
 inferTypeExp :: Env -> Exp -> Err Type
 inferTypeExp env (EInt _) = return Type_int
--- inferTypeExp env (EDouble _) = 
--- inferTypeExp env (EString _) = 
--- inferTypeExp env (EId i) = 
+inferTypeExp env (EDouble _) = return Type_double
+inferTypeExp env (EString _) = return Type_string
+inferTypeExp env (EId i) = lookupVar 1 env
     -- use lookupVar 
 -- inferTypeExp env (EApp i exps) = do
     -- use lookupFun
@@ -174,9 +183,30 @@ inferTypeExp env (EInt _) = return Type_int
 -- inferTypeExp env (EPDecr e) = 
 -- inferTypeExp env (EIncr e) = 
 -- inferTypeExp env (EDecr e) = 
--- inferTypeExp env (ETimes e1 e2) = 
--- inferTypeExp env (EDiv e1 e2) = 
--- inferTypeExp env (EPlus e1 e2) = 
+inferTypeExp env (ETimes e1 e2) = 
+    type1 <- inferTypeExp env e1
+    type2 <- inferTypeExp env e2
+    unless (isNum type1 && isNumType type2 && type1 ==type2) $ fail "The first expression does not have 
+    a number type"
+    unless (isNumType type2) $ fail "The second expression does not have a number type"
+    unless (type1 == type2) $ fail "Added expression must be of the same type"
+    return type2
+inferTypeExp env (EDiv e1 e2) = 
+    type1 <- inferTypeExp env e1
+    type2 <- inferTypeExp env e2
+    unless (isNum type1 && isNumType type2 && type1 ==type2) $ fail "The first expression does not have 
+    a number type"
+    unless (isNumType type2) $ fail "The second expression does not have a number type"
+    unless (type1 == type2) $ fail "Added expression must be of the same type"
+    return type2
+inferTypeExp env (EPlus e1 e2) = 
+    type1 <- inferTypeExp env e1
+    type2 <- inferTypeExp env e2
+    unless (isNum type1 && isNumType type2 && type1 ==type2) $ fail "The first expression does not have 
+    a number type"
+    unless (isNumType type2) $ fail "The second expression does not have a number type"
+    unless (type1 == type2) $ fail "Added expression must be of the same type"
+    return type2
 -- inferTypeExp env (EMinus e1 e2) = 
 -- inferTypeExp env (ELt e1 e2) = do
 -- inferTypeExp env (EGt e1 e2) = 
