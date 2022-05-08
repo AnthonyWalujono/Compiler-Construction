@@ -130,10 +130,10 @@ checkStm env (SReturn e) ty = do
     return env
 
 checkStm env (SInit ty' i e) ty = do
-    env <- insertVar env 1 ty'
-    ty1 <- inferTypeExp env' e 
+    env <- insertVar env i ty'
+    ty1 <- inferTypeExp env e 
     if ty1 == ty' then
-        return env'
+        return env
     else 
         fail $ typeMismatchError e ty1 ty'
     -- similar to SDecls, but not need for foldM
@@ -143,15 +143,20 @@ checkStm env (SInit ty' i e) ty = do
 -- checkStm env SReturnVoid ty = do
     -- return a typeMismatchError
 
--- checkStm env (SWhile e stm) ty = do
-    -- use newBlock
+checkStm env (SWhile e stm) ty = do
+    checkExp env e Type_bool
+    foldM(\e s -> checkStm e s ty) (newBlock env) [stm]
+    return env
 
--- checkStm env (SBlock stms) ty = do
-    -- use newBlock
-    -- use foldM_ to fold checkStm over all stms
+checkStm env (SBlock stms) ty = do
+    foldM (\e s -> checkStm e s ty) (newBlock env) stms
+    return env
 
--- checkStm env (SIfElse e stm1 stm2) ty = do
-    -- use newBlock in both branches
+checkStm env (SIfElse e stm1 stm2) ty = do
+    checkExp env e Type_bool
+    foldM(\e s -> checkStm e s ty) (newBlock env) [stm1]
+    foldM(\e s -> checkStm e s ty) (newBlock env) [stm2]
+    return env
 
 {-   
 Once you have all cases you can delete the next line which is only needed to catch all cases that are not yet implemented.
@@ -173,49 +178,70 @@ inferTypeExp :: Env -> Exp -> Err Type
 inferTypeExp env (EInt _) = return Type_int
 inferTypeExp env (EDouble _) = return Type_double
 inferTypeExp env (EString _) = return Type_string
-inferTypeExp env (EId i) = lookupVar 1 env
+inferTypeExp env (EId i) = do
+    ty <- lookupVar i env
+    return ty
+inferTypeExp env (ETrue) = return Type_bool
+inferTypeExp env (EFalse) = return Type_bool
+
     -- use lookupVar 
--- inferTypeExp env (EApp i exps) = do
-    -- use lookupFun
-    -- use forM_ to iterate checkExp over exps
--- inferTypeExp env (EPIncr e) = 
-    -- use inferTypeOverloadedExp 
--- inferTypeExp env (EPDecr e) = 
--- inferTypeExp env (EIncr e) = 
--- inferTypeExp env (EDecr e) = 
+inferTypeExp env (EApp i exps) = do
+    funcSig <- lookupFun env i
+    if (length (fst funcSig) /= (length exps)) then fail "Incorrect number of arguments"
+    else do forM_ (zip exps (fst funcSig)) (\p -> checkExp  env (fst p) (snd p))
+    return (snd funcSig)
+inferTypeExp env (EPIncr e) = 
+    inferTypeOverloadedExp env (Alternative [Type_int,Type_double]) e [] 
+inferTypeExp env (EPDecr e) = 
+    inferTypeOverloadedExp env (Alternative [Type_int,Type_double]) e []
+inferTypeExp env (EIncr e) = 
+     inferTypeOverloadedExp env (Alternative [Type_int,Type_double]) e []
+inferTypeExp env (EDecr e) = 
+    inferTypeOverloadedExp env (Alternative [Type_int,Type_double]) e []
 inferTypeExp env (ETimes e1 e2) = 
-    type1 <- inferTypeExp env e1
-    type2 <- inferTypeExp env e2
-    unless (isNum type1 && isNumType type2 && type1 ==type2) $ fail "The first expression does not have 
-    a number type"
-    unless (isNumType type2) $ fail "The second expression does not have a number type"
-    unless (type1 == type2) $ fail "Added expression must be of the same type"
-    return type2
+    inferTypeOverloadedExp env (Alternative [Type_int,Type_double]) e1 [e2]
 inferTypeExp env (EDiv e1 e2) = 
-    type1 <- inferTypeExp env e1
-    type2 <- inferTypeExp env e2
-    unless (isNum type1 && isNumType type2 && type1 ==type2) $ fail "The first expression does not have 
-    a number type"
-    unless (isNumType type2) $ fail "The second expression does not have a number type"
-    unless (type1 == type2) $ fail "Added expression must be of the same type"
-    return type2
+    inferTypeOverloadedExp env (Alternative [Type_int,Type_double]) e1 [e2]
 inferTypeExp env (EPlus e1 e2) = 
-    type1 <- inferTypeExp env e1
-    type2 <- inferTypeExp env e2
-    unless (isNum type1 && isNumType type2 && type1 ==type2) $ fail "The first expression does not have 
-    a number type"
-    unless (isNumType type2) $ fail "The second expression does not have a number type"
-    unless (type1 == type2) $ fail "Added expression must be of the same type"
-    return type2
--- inferTypeExp env (EMinus e1 e2) = 
--- inferTypeExp env (ELt e1 e2) = do
--- inferTypeExp env (EGt e1 e2) = 
--- inferTypeExp env (ELtEq e1 e2) = 
--- inferTypeExp env (EGtEq e1 e2) = 
--- inferTypeExp env (EEq e1 e2) = do
--- inferTypeExp env (ENEq e1 e2) = 
--- inferTypeExp env (EAnd e1 e2) = do
--- inferTypeExp env (EOr e1 e2) = 
+    inferTypeOverloadedExp env (Alternative [Type_int,Type_double, Type_string]) e1 [e2]
+inferTypeExp env (EMinus e1 e2) = 
+    inferTypeOverloadedExp env (Alternative [Type_int,Type_double]) e1 [e2]
+inferTypeExp env (ELt e1 e2) = do
+    if (e1 == ETrue || e1 == EFalse ||e2 == ETrue || e2 == EFalse) then fail "No True/False in comparison statements.\n"
+    else do
+        ty <- inferTypeExp env e1
+        checkExp env e2 ty
+        return Type_bool
+inferTypeExp env (EGt e1 e2) = do
+    if (e1 == ETrue || e1 == EFalse ||e2 == ETrue || e2 == EFalse) then fail "No True/False in comparison statements.\n"
+    else do
+        ty <- inferTypeExp env e1
+        checkExp env e2 ty
+        return Type_bool
+inferTypeExp env (ELtEq e1 e2) = do 
+    ty <- inferTypeExp env e1
+    checkExp env e2 ty
+    return Type_bool
+inferTypeExp env (EGtEq e1 e2) = do
+    ty <- inferTypeExp env e1
+    checkExp env e2 ty
+    return Type_bool
+inferTypeExp env (EEq e1 e2) = do
+    ty <- inferTypeExp env e1
+    checkExp env e2 ty
+    return Type_bool
+inferTypeExp env (ENEq e1 e2) = do
+    ty <- inferTypeExp env e1
+    checkExp env e2 ty
+    return Type_bool
+inferTypeExp env (EAnd e1 e2) = do
+    ty <- inferTypeExp env e1
+    checkExp env e2 Type_bool
+    return Type_bool
+inferTypeExp env (EOr e1 e2) = do
+    ty <- inferTypeExp env e1
+    checkExp env e2 Type_bool
+    return Type_bool
 
 inferTypeExp env (EAss e1 e2) = do
     ty <- inferTypeExp env e1
@@ -247,3 +273,4 @@ checkExp env e ty = do
     ty' <- inferTypeExp env e
     unless (ty == ty') $ 
         fail $ typeMismatchError e ty ty'
+
